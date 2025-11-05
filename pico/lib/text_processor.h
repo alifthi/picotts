@@ -10,7 +10,7 @@ int init_text_processor(const char* json_path);
 // Convert text to a sequence of symbol IDs
 int* text_to_sequence(char* text, size_t* length);
 
-// Clean up processor resources
+// To free the sequence pointer
 void cleanup_text_processor(void);
 
 // Helper functions
