@@ -16,14 +16,14 @@ typedef struct {
 } TTSConfig;
 
 typedef struct {
-    TfLiteInterpreter* tacotron2_interpreter;
-    TfLiteInterpreter* melgan_interpreter;
+    TfLiteInterpreter* text2mel_interpreter;
+    TfLiteInterpreter* vocoder_interpreter;
     char* processor_path;
     TTSConfig config;
 } TTSContext;
 
-TTSContext* tts_initialize(const char* tacotron_model_path,
-                         const char* melgan_model_path,
+TTSContext* tts_initialize(const char* text2mel_model_path,
+                         const char* vocoder_model_path,
                          const char* processor_path);
 
 void tts_configure(TTSContext* ctx, const TTSConfig* config);
