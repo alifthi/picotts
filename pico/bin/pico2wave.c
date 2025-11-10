@@ -477,6 +477,14 @@ int main(int argc, const char *argv[]) {
             return 1;
         }
 
+        // Configure TTS parameters
+        TTSConfig config = {
+            .energy_ratio = 1.0f,
+            .speaker_id = 0,
+            .f0_ratio = 1.0f,
+            .speed_ratio = 1.0f
+        };
+        tts_configure(tts, &config);
     }
 }
 
