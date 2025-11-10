@@ -1,5 +1,5 @@
-#ifndef TTS_MODEL_H
-#define TTS_MODEL_H
+#ifndef TTSDLBASED_H
+#define TTSDLBASED_H
 
 #include <stddef.h>
 #include <tensorflow/lite/c/c_api.h>

@@ -21,6 +21,7 @@
 
 #include <popt.h>
 #include <stdio.h>
+#include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 #include <assert.h>
@@ -28,11 +29,15 @@
 #include <picoapi.h>
 #include <picoapid.h>
 #include <picoos.h>
-
+#include <ttsdlbased.h>
 
 /* adaptation layer defines */
 #define PICO_MEM_SIZE       2500000
 #define DummyLen 100000000
+
+/* Parameters for writing on disk*/
+#define SAMPLE_RATE 22050  // MelGAN output sample rate
+#define WAV_HEADER_SIZE 44
 
 /* string constants */
 #define MAX_OUTBUF_SIZE     128
@@ -94,6 +99,70 @@ size_t myread(FILE *source, char **buffer) {
         // printf("offset = %ld\n", offset);
     } while (1);
 }
+
+typedef struct WAVHeader {
+    char     riff[4];        // "RIFF"
+    uint32_t chunk_size;     
+    char     wave[4];        // "WAVE"
+    char     fmt[4];         // "fmt "
+    uint32_t fmt_chunk_size; // 16 for PCM
+    uint16_t audio_format;   // 1 = PCM
+    uint16_t num_channels;   // 1 = mono
+    uint32_t sample_rate;    // e.g., 22050
+    uint32_t byte_rate;
+    uint16_t block_align;
+    uint16_t bits_per_sample;
+    char     data[4];        // "data"
+    uint32_t data_chunk_size;
+} WAVHeader;
+
+void write_wav_header(FILE* fp, size_t num_samples, int sample_rate) {
+    WAVHeader header;
+
+    // RIFF chunk
+    header.riff[0]='R'; header.riff[1]='I'; header.riff[2]='F'; header.riff[3]='F';
+    header.chunk_size = 36 + num_samples * 2; // int16 = 2 bytes
+    header.wave[0]='W'; header.wave[1]='A'; header.wave[2]='V'; header.wave[3]='E';
+    
+    // fmt subchunk
+    header.fmt[0]='f'; header.fmt[1]='m'; header.fmt[2]='t'; header.fmt[3]=' ';
+    header.fmt_chunk_size = 16;
+    header.audio_format = 1; // PCM
+    header.num_channels = 1;
+    header.sample_rate = sample_rate;
+    header.bits_per_sample = 16;
+    header.byte_rate = sample_rate * header.num_channels * header.bits_per_sample / 8;
+    header.block_align = header.num_channels * header.bits_per_sample / 8;
+    
+    // data subchunk
+    header.data[0]='d'; header.data[1]='a'; header.data[2]='t'; header.data[3]='a';
+    header.data_chunk_size = num_samples * 2;
+
+    fwrite(&header, sizeof(WAVHeader), 1, fp);
+}
+
+void write_float_wav(const char* filename, float* audio_buffer, size_t audio_size) {
+    FILE* fp = fopen(filename, "wb");
+    if (!fp) {
+        fprintf(stderr, "Failed to open output file: %s\n", filename);
+        return;
+    }
+
+    int sample_rate = 22050; // your desired rate
+    write_wav_header(fp, audio_size, sample_rate);
+
+    // Convert float [-1,1] to int16
+    for (size_t i = 0; i < audio_size; ++i) {
+        float sample = audio_buffer[i];
+        if (sample > 1.0f) sample = 1.0f;
+        if (sample < -1.0f) sample = -1.0f;
+        int16_t s16 = (int16_t)(sample * 32767.0f);
+        fwrite(&s16, sizeof(int16_t), 1, fp);
+    }
+
+    fclose(fp);
+}
+
 
 int main(int argc, const char *argv[]) {
     char * wavefile = NULL;
