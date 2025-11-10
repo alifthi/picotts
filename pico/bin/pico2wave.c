@@ -171,7 +171,8 @@ int main(int argc, const char *argv[]) {
     char * text = NULL;
     int8_t * buffer;
     size_t bufferSize = 256;
-    
+
+    char * dlbased = "false";
     char* wavefile = NULL;
     char* text = NULL;
     char* tacotron_path = NULL;
@@ -195,6 +196,8 @@ int main(int argc, const char *argv[]) {
             "path to processor.json file", "PATH" },
         { "text", 's', POPT_ARG_STRING, &text, 0,
             "text to synthesize", "TEXT" },
+        {"dlbased", 'dl', POPT_ARG_STRING, &dlbased, 0,
+            "Use deep learning based tts", "dl" },
 		POPT_AUTOHELP
 		POPT_TABLEEND
 	};
@@ -211,6 +214,14 @@ int main(int argc, const char *argv[]) {
 			exit(1);
 		}
 	}
+
+    // Validate required arguments
+    if (!tacotron_path || !melgan_path || !processor_path || !text || !wavefile) {
+        fprintf(stderr, "Missing required arguments.\n");
+        poptPrintHelp(optCon, stderr, 0);
+        poptFreeContext(optCon);
+        return 1;
+    }
 
     /* Mandatory option: --wave */
 	if(!wavefile) {
