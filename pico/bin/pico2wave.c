@@ -468,7 +468,14 @@ int main(int argc, const char *argv[]) {
             poptFreeContext(optCon);
             return 1;
         }
-        
+        poptFreeContext(optCon);
+
+        // Initialize TTS model
+        TTSContext* tts = tts_initialize(tacotron_path, melgan_path, processor_path);
+        if (!tts) {
+            fprintf(stderr, "Failed to initialize TTS model\n");
+            return 1;
+        }
 
     }
 }
