@@ -171,6 +171,12 @@ int main(int argc, const char *argv[]) {
     char * text = NULL;
     int8_t * buffer;
     size_t bufferSize = 256;
+    
+    char* wavefile = NULL;
+    char* text = NULL;
+    char* tacotron_path = NULL;
+    char* melgan_path = NULL;
+    char* processor_path = NULL;
 
     /* Parsing options */
 	poptContext optCon; /* context for parsing command-line options */
@@ -181,6 +187,14 @@ int main(int argc, const char *argv[]) {
 		  "Write output to this WAV file (extension SHOULD be .wav)", "filename.wav" },
 		{ "lang", 'l', POPT_ARG_STRING | POPT_ARGFLAG_SHOW_DEFAULT, &lang, 0,
 		  "Language", "lang" },
+        { "tacotron", 't', POPT_ARG_STRING, &tacotron_path, 0,
+            "path to Tacotron2 TFLite model", "PATH" },
+        { "melgan", 'g', POPT_ARG_STRING, &melgan_path, 0,
+            "path to MB-MelGAN TFLite model", "PATH" },
+        { "processor", 'p', POPT_ARG_STRING, &processor_path, 0,
+            "path to processor.json file", "PATH" },
+        { "text", 's', POPT_ARG_STRING, &text, 0,
+            "text to synthesize", "TEXT" },
 		POPT_AUTOHELP
 		POPT_TABLEEND
 	};
