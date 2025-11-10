@@ -215,256 +215,261 @@ int main(int argc, const char *argv[]) {
 		}
 	}
 
-    // Validate required arguments
-    if (!tacotron_path || !melgan_path || !processor_path || !text || !wavefile) {
-        fprintf(stderr, "Missing required arguments.\n");
-        poptPrintHelp(optCon, stderr, 0);
+    if (dlbased == "false"){
+        /* Mandatory option: --wave */
+        if(!wavefile) {
+            fprintf(stderr, "Mandatory option: %s\n\n",
+                "--wave=filename.wav");
+            poptPrintHelp(optCon, stderr, 0);
+            exit(1);
+        }
+        /* option: --lang */
+        for(langIndexTmp =0; langIndexTmp<picoNumSupportedVocs; langIndexTmp++) {
+            if(!strcmp(picoSupportedLang[langIndexTmp], lang)) {
+                langIndex = langIndexTmp;
+                break;
+            }
+        }
+        if(langIndex == -1) {
+            fprintf(stderr, "Unknown language: %s\nValid languages:\n",
+                lang);
+            for(langIndexTmp =0; langIndexTmp<picoNumSupportedVocs; langIndexTmp++) {
+                fprintf(stderr, "%s\n", picoSupportedLang[langIndexTmp]);
+            }
+            lang = "en-US";
+            fprintf(stderr, "\n");
+            poptPrintHelp(optCon, stderr, 0);
+            exit(1);
+        }
+
+        /* Remaining argument is <words> */
+        const char **extra_argv;
+        extra_argv = poptGetArgs(optCon);
+        if(extra_argv) {
+            text = (char *) &(*extra_argv)[0];
+        } else {
+            // read from stdin
+            size_t len = myread(stdin, &text);
+            // debug buffered read: make this command a pass-though cat-like command and compare input with output
+            // printf("read %ld characters\n", len);
+            // fwrite(text, 1, len, stdout);
+            // exit(1);
+
+            // TODO: break text in chunks of max size equal to pico_Int16 textSize,
+            // /usr/include/picoapi.h:typedef short pico_Int16;
+            // /usr/include/limits.h:#  define SHRT_MAX        32767
+        }
+
         poptFreeContext(optCon);
-        return 1;
-    }
 
-    /* Mandatory option: --wave */
-	if(!wavefile) {
-		fprintf(stderr, "Mandatory option: %s\n\n",
-			"--wave=filename.wav");
-		poptPrintHelp(optCon, stderr, 0);
-		exit(1);
-	}
-	/* option: --lang */
-	for(langIndexTmp =0; langIndexTmp<picoNumSupportedVocs; langIndexTmp++) {
-	    if(!strcmp(picoSupportedLang[langIndexTmp], lang)) {
-	        langIndex = langIndexTmp;
-	        break;
-	    }
-	}
-	if(langIndex == -1) {
-		fprintf(stderr, "Unknown language: %s\nValid languages:\n",
-			lang);
-	    for(langIndexTmp =0; langIndexTmp<picoNumSupportedVocs; langIndexTmp++) {
-	        fprintf(stderr, "%s\n", picoSupportedLang[langIndexTmp]);
-	    }
-	    lang = "en-US";
-		fprintf(stderr, "\n");
-		poptPrintHelp(optCon, stderr, 0);
-		exit(1);
-	}
+        buffer = malloc( bufferSize );
 
-	/* Remaining argument is <words> */
-	const char **extra_argv;
-	extra_argv = poptGetArgs(optCon);
-    if(extra_argv) {
-		text = (char *) &(*extra_argv)[0];
-    } else {
-        // read from stdin
-        size_t len = myread(stdin, &text);
-        // debug buffered read: make this command a pass-though cat-like command and compare input with output
-        // printf("read %ld characters\n", len);
-        // fwrite(text, 1, len, stdout);
-        // exit(1);
+        int ret, getstatus;
+        pico_Char * inp = NULL;
+        pico_Char * local_text = NULL;
+        short       outbuf[MAX_OUTBUF_SIZE/2];
+        pico_Int16  bytes_sent, bytes_recv, text_remaining, out_data_type;
+        pico_Retstring outMessage;
 
-        // TODO: break text in chunks of max size equal to pico_Int16 textSize,
-        // /usr/include/picoapi.h:typedef short pico_Int16;
-        // /usr/include/limits.h:#  define SHRT_MAX        32767
-    }
+        picoSynthAbort = 0;
 
-    poptFreeContext(optCon);
-
-    buffer = malloc( bufferSize );
-
-    int ret, getstatus;
-    pico_Char * inp = NULL;
-    pico_Char * local_text = NULL;
-    short       outbuf[MAX_OUTBUF_SIZE/2];
-    pico_Int16  bytes_sent, bytes_recv, text_remaining, out_data_type;
-    pico_Retstring outMessage;
-
-    picoSynthAbort = 0;
-
-    picoMemArea = malloc( PICO_MEM_SIZE );
-    if((ret = pico_initialize( picoMemArea, PICO_MEM_SIZE, &picoSystem ))) {
-        pico_getSystemStatusMessage(picoSystem, ret, outMessage);
-        fprintf(stderr, "Cannot initialize pico (%i): %s\n", ret, outMessage);
-        goto terminate;
-    }
-
-    /* Load the text analysis Lingware resource file.   */
-    picoTaFileName      = (pico_Char *) malloc( PICO_MAX_DATAPATH_NAME_SIZE + PICO_MAX_FILE_NAME_SIZE );
-    strcpy((char *) picoTaFileName,   PICO_LINGWARE_PATH);
-    strcat((char *) picoTaFileName,   (const char *) picoInternalTaLingware[langIndex]);
-    if((ret = pico_loadResource( picoSystem, picoTaFileName, &picoTaResource ))) {
-        pico_getSystemStatusMessage(picoSystem, ret, outMessage);
-        fprintf(stderr, "Cannot load text analysis resource file (%i): %s\n", ret, outMessage);
-        goto unloadTaResource;
-    }
-
-    /* Load the signal generation Lingware resource file.   */
-    picoSgFileName      = (pico_Char *) malloc( PICO_MAX_DATAPATH_NAME_SIZE + PICO_MAX_FILE_NAME_SIZE );
-    strcpy((char *) picoSgFileName,   PICO_LINGWARE_PATH);
-    strcat((char *) picoSgFileName,   (const char *) picoInternalSgLingware[langIndex]);
-    if((ret = pico_loadResource( picoSystem, picoSgFileName, &picoSgResource ))) {
-        pico_getSystemStatusMessage(picoSystem, ret, outMessage);
-        fprintf(stderr, "Cannot load signal generation Lingware resource file (%i): %s\n", ret, outMessage);
-        goto unloadSgResource;
-    }
-
-    /* Load the utpp Lingware resource file if exists - NOTE: this file is optional
-       and is currently not used. Loading is only attempted for future compatibility.
-       If this file is not present the loading will still succeed.                      //
-    picoUtppFileName      = (pico_Char *) malloc( PICO_MAX_DATAPATH_NAME_SIZE + PICO_MAX_FILE_NAME_SIZE );
-    strcpy((char *) picoUtppFileName,   PICO_LINGWARE_PATH);
-    strcat((char *) picoUtppFileName,   (const char *) picoInternalUtppLingware[langIndex]);
-    ret = pico_loadResource( picoSystem, picoUtppFileName, &picoUtppResource );
-    pico_getSystemStatusMessage(picoSystem, ret, outMessage);
-    printf("pico_loadResource: %i: %s\n", ret, outMessage);
-    */
-
-    /* Get the text analysis resource name.     */
-    picoTaResourceName  = (pico_Char *) malloc( PICO_MAX_RESOURCE_NAME_SIZE );
-    if((ret = pico_getResourceName( picoSystem, picoTaResource, (char *) picoTaResourceName ))) {
-        pico_getSystemStatusMessage(picoSystem, ret, outMessage);
-        fprintf(stderr, "Cannot get the text analysis resource name (%i): %s\n", ret, outMessage);
-        goto unloadUtppResource;
-    }
-
-    /* Get the signal generation resource name. */
-    picoSgResourceName  = (pico_Char *) malloc( PICO_MAX_RESOURCE_NAME_SIZE );
-    if((ret = pico_getResourceName( picoSystem, picoSgResource, (char *) picoSgResourceName ))) {
-        pico_getSystemStatusMessage(picoSystem, ret, outMessage);
-        fprintf(stderr, "Cannot get the signal generation resource name (%i): %s\n", ret, outMessage);
-        goto unloadUtppResource;
-    }
-
-
-    /* Create a voice definition.   */
-    if((ret = pico_createVoiceDefinition( picoSystem, (const pico_Char *) PICO_VOICE_NAME ))) {
-        pico_getSystemStatusMessage(picoSystem, ret, outMessage);
-        fprintf(stderr, "Cannot create voice definition (%i): %s\n", ret, outMessage);
-        goto unloadUtppResource;
-    }
-
-    /* Add the text analysis resource to the voice. */
-    if((ret = pico_addResourceToVoiceDefinition( picoSystem, (const pico_Char *) PICO_VOICE_NAME, picoTaResourceName ))) {
-        pico_getSystemStatusMessage(picoSystem, ret, outMessage);
-        fprintf(stderr, "Cannot add the text analysis resource to the voice (%i): %s\n", ret, outMessage);
-        goto unloadUtppResource;
-    }
-
-    /* Add the signal generation resource to the voice. */
-    if((ret = pico_addResourceToVoiceDefinition( picoSystem, (const pico_Char *) PICO_VOICE_NAME, picoSgResourceName ))) {
-        pico_getSystemStatusMessage(picoSystem, ret, outMessage);
-        fprintf(stderr, "Cannot add the signal generation resource to the voice (%i): %s\n", ret, outMessage);
-        goto unloadUtppResource;
-    }
-
-    /* Create a new Pico engine. */
-    if((ret = pico_newEngine( picoSystem, (const pico_Char *) PICO_VOICE_NAME, &picoEngine ))) {
-        pico_getSystemStatusMessage(picoSystem, ret, outMessage);
-        fprintf(stderr, "Cannot create a new pico engine (%i): %s\n", ret, outMessage);
-        goto disposeEngine;
-    }
-
-    local_text = (pico_Char *) text ;
-    text_remaining = strlen((const char *) local_text) + 1;
-
-    inp = (pico_Char *) local_text;
-
-    size_t bufused = 0;
-
-    picoos_Common common = (picoos_Common) pico_sysGetCommon(picoSystem);
-
-    picoos_SDFile sdOutFile = NULL;
-
-    picoos_bool done = TRUE;
-    if(TRUE != (done = picoos_sdfOpenOut(common, &sdOutFile,
-        (picoos_char *) wavefile, SAMPLE_FREQ_16KHZ, PICOOS_ENC_LIN)))
-    {
-        fprintf(stderr, "Cannot open output wave file\n");
-        ret = 1;
-        goto disposeEngine;
-    }
-
-    /* synthesis loop   */
-    while (text_remaining) {
-        /* Feed the text into the engine.   */
-        if((ret = pico_putTextUtf8( picoEngine, inp, text_remaining, &bytes_sent ))) {
+        picoMemArea = malloc( PICO_MEM_SIZE );
+        if((ret = pico_initialize( picoMemArea, PICO_MEM_SIZE, &picoSystem ))) {
             pico_getSystemStatusMessage(picoSystem, ret, outMessage);
-            fprintf(stderr, "Cannot put Text (%i): %s\n", ret, outMessage);
+            fprintf(stderr, "Cannot initialize pico (%i): %s\n", ret, outMessage);
+            goto terminate;
+        }
+
+        /* Load the text analysis Lingware resource file.   */
+        picoTaFileName      = (pico_Char *) malloc( PICO_MAX_DATAPATH_NAME_SIZE + PICO_MAX_FILE_NAME_SIZE );
+        strcpy((char *) picoTaFileName,   PICO_LINGWARE_PATH);
+        strcat((char *) picoTaFileName,   (const char *) picoInternalTaLingware[langIndex]);
+        if((ret = pico_loadResource( picoSystem, picoTaFileName, &picoTaResource ))) {
+            pico_getSystemStatusMessage(picoSystem, ret, outMessage);
+            fprintf(stderr, "Cannot load text analysis resource file (%i): %s\n", ret, outMessage);
+            goto unloadTaResource;
+        }
+
+        /* Load the signal generation Lingware resource file.   */
+        picoSgFileName      = (pico_Char *) malloc( PICO_MAX_DATAPATH_NAME_SIZE + PICO_MAX_FILE_NAME_SIZE );
+        strcpy((char *) picoSgFileName,   PICO_LINGWARE_PATH);
+        strcat((char *) picoSgFileName,   (const char *) picoInternalSgLingware[langIndex]);
+        if((ret = pico_loadResource( picoSystem, picoSgFileName, &picoSgResource ))) {
+            pico_getSystemStatusMessage(picoSystem, ret, outMessage);
+            fprintf(stderr, "Cannot load signal generation Lingware resource file (%i): %s\n", ret, outMessage);
+            goto unloadSgResource;
+        }
+
+        /* Load the utpp Lingware resource file if exists - NOTE: this file is optional
+        and is currently not used. Loading is only attempted for future compatibility.
+        If this file is not present the loading will still succeed.                      //
+        picoUtppFileName      = (pico_Char *) malloc( PICO_MAX_DATAPATH_NAME_SIZE + PICO_MAX_FILE_NAME_SIZE );
+        strcpy((char *) picoUtppFileName,   PICO_LINGWARE_PATH);
+        strcat((char *) picoUtppFileName,   (const char *) picoInternalUtppLingware[langIndex]);
+        ret = pico_loadResource( picoSystem, picoUtppFileName, &picoUtppResource );
+        pico_getSystemStatusMessage(picoSystem, ret, outMessage);
+        printf("pico_loadResource: %i: %s\n", ret, outMessage);
+        */
+
+        /* Get the text analysis resource name.     */
+        picoTaResourceName  = (pico_Char *) malloc( PICO_MAX_RESOURCE_NAME_SIZE );
+        if((ret = pico_getResourceName( picoSystem, picoTaResource, (char *) picoTaResourceName ))) {
+            pico_getSystemStatusMessage(picoSystem, ret, outMessage);
+            fprintf(stderr, "Cannot get the text analysis resource name (%i): %s\n", ret, outMessage);
+            goto unloadUtppResource;
+        }
+
+        /* Get the signal generation resource name. */
+        picoSgResourceName  = (pico_Char *) malloc( PICO_MAX_RESOURCE_NAME_SIZE );
+        if((ret = pico_getResourceName( picoSystem, picoSgResource, (char *) picoSgResourceName ))) {
+            pico_getSystemStatusMessage(picoSystem, ret, outMessage);
+            fprintf(stderr, "Cannot get the signal generation resource name (%i): %s\n", ret, outMessage);
+            goto unloadUtppResource;
+        }
+
+
+        /* Create a voice definition.   */
+        if((ret = pico_createVoiceDefinition( picoSystem, (const pico_Char *) PICO_VOICE_NAME ))) {
+            pico_getSystemStatusMessage(picoSystem, ret, outMessage);
+            fprintf(stderr, "Cannot create voice definition (%i): %s\n", ret, outMessage);
+            goto unloadUtppResource;
+        }
+
+        /* Add the text analysis resource to the voice. */
+        if((ret = pico_addResourceToVoiceDefinition( picoSystem, (const pico_Char *) PICO_VOICE_NAME, picoTaResourceName ))) {
+            pico_getSystemStatusMessage(picoSystem, ret, outMessage);
+            fprintf(stderr, "Cannot add the text analysis resource to the voice (%i): %s\n", ret, outMessage);
+            goto unloadUtppResource;
+        }
+
+        /* Add the signal generation resource to the voice. */
+        if((ret = pico_addResourceToVoiceDefinition( picoSystem, (const pico_Char *) PICO_VOICE_NAME, picoSgResourceName ))) {
+            pico_getSystemStatusMessage(picoSystem, ret, outMessage);
+            fprintf(stderr, "Cannot add the signal generation resource to the voice (%i): %s\n", ret, outMessage);
+            goto unloadUtppResource;
+        }
+
+        /* Create a new Pico engine. */
+        if((ret = pico_newEngine( picoSystem, (const pico_Char *) PICO_VOICE_NAME, &picoEngine ))) {
+            pico_getSystemStatusMessage(picoSystem, ret, outMessage);
+            fprintf(stderr, "Cannot create a new pico engine (%i): %s\n", ret, outMessage);
             goto disposeEngine;
         }
 
-        text_remaining -= bytes_sent;
-        inp += bytes_sent;
+        local_text = (pico_Char *) text ;
+        text_remaining = strlen((const char *) local_text) + 1;
 
-        do {
-            if (picoSynthAbort) {
-                goto disposeEngine;
-            }
-            /* Retrieve the samples and add them to the buffer. */
-            getstatus = pico_getData( picoEngine, (void *) outbuf,
-                      MAX_OUTBUF_SIZE, &bytes_recv, &out_data_type );
-            if((getstatus !=PICO_STEP_BUSY) && (getstatus !=PICO_STEP_IDLE)){
-                pico_getSystemStatusMessage(picoSystem, getstatus, outMessage);
-                fprintf(stderr, "Cannot get Data (%i): %s\n", getstatus, outMessage);
-                goto disposeEngine;
-            }
-            if (bytes_recv) {
-                if ((bufused + bytes_recv) <= bufferSize) {
-                    memcpy(buffer+bufused, (int8_t *) outbuf, bytes_recv);
-                    bufused += bytes_recv;
-                } else {
-                    done = picoos_sdfPutSamples(
-                                        sdOutFile,
-                                        bufused / 2,
-                                        (picoos_int16*) (buffer));
-                    bufused = 0;
-                    memcpy(buffer, (int8_t *) outbuf, bytes_recv);
-                    bufused += bytes_recv;
-                }
-            }
-        } while (PICO_STEP_BUSY == getstatus);
-        /* This chunk of synthesis is finished; pass the remaining samples. */
-        if (!picoSynthAbort) {
-                    done = picoos_sdfPutSamples(
-                                        sdOutFile,
-                                        bufused / 2,
-                                        (picoos_int16*) (buffer));
+        inp = (pico_Char *) local_text;
+
+        size_t bufused = 0;
+
+        picoos_Common common = (picoos_Common) pico_sysGetCommon(picoSystem);
+
+        picoos_SDFile sdOutFile = NULL;
+
+        picoos_bool done = TRUE;
+        if(TRUE != (done = picoos_sdfOpenOut(common, &sdOutFile,
+            (picoos_char *) wavefile, SAMPLE_FREQ_16KHZ, PICOOS_ENC_LIN)))
+        {
+            fprintf(stderr, "Cannot open output wave file\n");
+            ret = 1;
+            goto disposeEngine;
         }
-        picoSynthAbort = 0;
-    }
 
-    if(TRUE != (done = picoos_sdfCloseOut(common, &sdOutFile)))
-    {
-        fprintf(stderr, "Cannot close output wave file\n");
-        ret = 1;
-        goto disposeEngine;
-    }
+        /* synthesis loop   */
+        while (text_remaining) {
+            /* Feed the text into the engine.   */
+            if((ret = pico_putTextUtf8( picoEngine, inp, text_remaining, &bytes_sent ))) {
+                pico_getSystemStatusMessage(picoSystem, ret, outMessage);
+                fprintf(stderr, "Cannot put Text (%i): %s\n", ret, outMessage);
+                goto disposeEngine;
+            }
 
-disposeEngine:
-    if (picoEngine) {
-        pico_disposeEngine( picoSystem, &picoEngine );
-        pico_releaseVoiceDefinition( picoSystem, (pico_Char *) PICO_VOICE_NAME );
-        picoEngine = NULL;
+            text_remaining -= bytes_sent;
+            inp += bytes_sent;
+
+            do {
+                if (picoSynthAbort) {
+                    goto disposeEngine;
+                }
+                /* Retrieve the samples and add them to the buffer. */
+                getstatus = pico_getData( picoEngine, (void *) outbuf,
+                        MAX_OUTBUF_SIZE, &bytes_recv, &out_data_type );
+                if((getstatus !=PICO_STEP_BUSY) && (getstatus !=PICO_STEP_IDLE)){
+                    pico_getSystemStatusMessage(picoSystem, getstatus, outMessage);
+                    fprintf(stderr, "Cannot get Data (%i): %s\n", getstatus, outMessage);
+                    goto disposeEngine;
+                }
+                if (bytes_recv) {
+                    if ((bufused + bytes_recv) <= bufferSize) {
+                        memcpy(buffer+bufused, (int8_t *) outbuf, bytes_recv);
+                        bufused += bytes_recv;
+                    } else {
+                        done = picoos_sdfPutSamples(
+                                            sdOutFile,
+                                            bufused / 2,
+                                            (picoos_int16*) (buffer));
+                        bufused = 0;
+                        memcpy(buffer, (int8_t *) outbuf, bytes_recv);
+                        bufused += bytes_recv;
+                    }
+                }
+            } while (PICO_STEP_BUSY == getstatus);
+            /* This chunk of synthesis is finished; pass the remaining samples. */
+            if (!picoSynthAbort) {
+                        done = picoos_sdfPutSamples(
+                                            sdOutFile,
+                                            bufused / 2,
+                                            (picoos_int16*) (buffer));
+            }
+            picoSynthAbort = 0;
+        }
+
+        if(TRUE != (done = picoos_sdfCloseOut(common, &sdOutFile)))
+        {
+            fprintf(stderr, "Cannot close output wave file\n");
+            ret = 1;
+            goto disposeEngine;
+        }
+
+    disposeEngine:
+        if (picoEngine) {
+            pico_disposeEngine( picoSystem, &picoEngine );
+            pico_releaseVoiceDefinition( picoSystem, (pico_Char *) PICO_VOICE_NAME );
+            picoEngine = NULL;
+        }
+    unloadUtppResource:
+        if (picoUtppResource) {
+            pico_unloadResource( picoSystem, &picoUtppResource );
+            picoUtppResource = NULL;
+        }
+    unloadSgResource:
+        if (picoSgResource) {
+            pico_unloadResource( picoSystem, &picoSgResource );
+            picoSgResource = NULL;
+        }
+    unloadTaResource:
+        if (picoTaResource) {
+            pico_unloadResource( picoSystem, &picoTaResource );
+            picoTaResource = NULL;
+        }
+    terminate:
+        if (picoSystem) {
+            pico_terminate(&picoSystem);
+            picoSystem = NULL;
+        }
+        exit(ret);
+    }else{
+
+        // Validate required arguments
+        if (!tacotron_path || !melgan_path || !processor_path || !text || !wavefile) {
+            fprintf(stderr, "Missing required arguments.\n");
+            poptPrintHelp(optCon, stderr, 0);
+            poptFreeContext(optCon);
+            return 1;
+        }
+        
+
     }
-unloadUtppResource:
-    if (picoUtppResource) {
-        pico_unloadResource( picoSystem, &picoUtppResource );
-        picoUtppResource = NULL;
-    }
-unloadSgResource:
-    if (picoSgResource) {
-        pico_unloadResource( picoSystem, &picoSgResource );
-        picoSgResource = NULL;
-    }
-unloadTaResource:
-    if (picoTaResource) {
-        pico_unloadResource( picoSystem, &picoTaResource );
-        picoTaResource = NULL;
-    }
-terminate:
-    if (picoSystem) {
-        pico_terminate(&picoSystem);
-        picoSystem = NULL;
-    }
-    exit(ret);
 }
 
