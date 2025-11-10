@@ -13,14 +13,14 @@ extern "C" {
 }
 
 // Implementation based on liteinference.py workflow
-TTSContext* tts_initialize(const char* tacotron_model_path, 
-                         const char* melgan_model_path,
+TTSContext* tts_initialize(const char* text2mel_model_path, 
+                         const char* vocoder_model_path,
                          const char* processor_path) {
     TTSContext* ctx = nullptr;
     TfLiteInterpreterOptions* options = nullptr;
     TfLiteDelegate* flex_delegate = nullptr;
-    TfLiteModel* tacotron_model = nullptr;
-    TfLiteModel* melgan_model = nullptr;
+    TfLiteModel* text2mel_model = nullptr;
+    TfLiteModel* vocoder_model = nullptr;
 
     // Create context
     ctx = (TTSContext*)malloc(sizeof(TTSContext));
@@ -47,38 +47,38 @@ TTSContext* tts_initialize(const char* tacotron_model_path,
     }
 
         
-    // Load Tacotron2 model
-    tacotron_model = TfLiteModelCreateFromFile(tacotron_model_path);
-    if (!tacotron_model) {
+    // Load text2mel model
+    text2mel_model = TfLiteModelCreateFromFile(text2mel_model_path);
+    if (!text2mel_model) {
         if (flex_delegate) TfLiteFlexDelegateDelete(flex_delegate);
         TfLiteInterpreterOptionsDelete(options);
         tts_cleanup(ctx);
         return nullptr;
     }
 
-    ctx->tacotron2_interpreter = TfLiteInterpreterCreate(tacotron_model, options);
-    TfLiteModelDelete(tacotron_model);
+    ctx->text2mel_interpreter = TfLiteInterpreterCreate(text2mel_model, options);
+    TfLiteModelDelete(text2mel_model);
     
-    if (!ctx->tacotron2_interpreter) {
+    if (!ctx->text2mel_interpreter) {
         if (flex_delegate) TfLiteFlexDelegateDelete(flex_delegate);
         TfLiteInterpreterOptionsDelete(options);
         tts_cleanup(ctx);
         return nullptr;
     }
     
-    // Load MB-MelGAN model
-    melgan_model = TfLiteModelCreateFromFile(melgan_model_path);
-    if (!melgan_model) {
+    // Load vocoder model
+    vocoder_model = TfLiteModelCreateFromFile(vocoder_model_path);
+    if (!vocoder_model) {
         if (flex_delegate) TfLiteFlexDelegateDelete(flex_delegate);
         TfLiteInterpreterOptionsDelete(options);
         tts_cleanup(ctx);
         return nullptr;
     }
     
-    ctx->melgan_interpreter = TfLiteInterpreterCreate(melgan_model, options);
-    TfLiteModelDelete(melgan_model);
+    ctx->vocoder_interpreter = TfLiteInterpreterCreate(vocoder_model, options);
+    TfLiteModelDelete(vocoder_model);
     
-    if (!ctx->melgan_interpreter) {
+    if (!ctx->vocoder_interpreter) {
         if (flex_delegate) TfLiteFlexDelegateDelete(flex_delegate);
         TfLiteInterpreterOptionsDelete(options);
         tts_cleanup(ctx);
@@ -90,8 +90,8 @@ TTSContext* tts_initialize(const char* tacotron_model_path,
     TfLiteInterpreterOptionsDelete(options);
     
     // Allocate tensors for both models
-    if (TfLiteInterpreterAllocateTensors(ctx->tacotron2_interpreter) != kTfLiteOk ||
-        TfLiteInterpreterAllocateTensors(ctx->melgan_interpreter) != kTfLiteOk) {
+    if (TfLiteInterpreterAllocateTensors(ctx->text2mel_interpreter) != kTfLiteOk ||
+        TfLiteInterpreterAllocateTensors(ctx->vocoder_interpreter) != kTfLiteOk) {
         tts_cleanup(ctx);
         return nullptr;
     }
@@ -134,7 +134,7 @@ int tts_generate_audio(TTSContext* ctx,
 
     free(input_ids);
 
-    // 2. Set Tacotron2 input tensors
+    // 2. Set text2mel input tensors
     int energy_index  = 0;
     int speaker_index = 1;
     int f0_index      = 2;
@@ -142,25 +142,25 @@ int tts_generate_audio(TTSContext* ctx,
     int text_index    = 4;
 
     int dims[2] = {1, input_length};
-    TfLiteStatus status = TfLiteInterpreterResizeInputTensor(ctx->tacotron2_interpreter, text_index, dims, 2);
+    TfLiteStatus status = TfLiteInterpreterResizeInputTensor(ctx->text2mel_interpreter, text_index, dims, 2);
     if (status != kTfLiteOk) {
         fprintf(stderr, "ResizeInputTensor failed for text input\n");
         return -1;
     }
 
     // 3) Reallocate tensors (must be done after resizing)
-    status = TfLiteInterpreterAllocateTensors(ctx->tacotron2_interpreter);
+    status = TfLiteInterpreterAllocateTensors(ctx->text2mel_interpreter);
     if (status != kTfLiteOk) {
         fprintf(stderr, "AllocateTensors failed\n");
         return -1;
     }
 
     // 4) Now safely get the tensor pointers
-    TfLiteTensor* energy_tensor  = TfLiteInterpreterGetInputTensor(ctx->tacotron2_interpreter, energy_index);
-    TfLiteTensor* speaker_tensor = TfLiteInterpreterGetInputTensor(ctx->tacotron2_interpreter, speaker_index);
-    TfLiteTensor* f0_tensor      = TfLiteInterpreterGetInputTensor(ctx->tacotron2_interpreter, f0_index);
-    TfLiteTensor* speed_tensor   = TfLiteInterpreterGetInputTensor(ctx->tacotron2_interpreter, speed_index);
-    TfLiteTensor* text_tensor    = TfLiteInterpreterGetInputTensor(ctx->tacotron2_interpreter, text_index);
+    TfLiteTensor* energy_tensor  = TfLiteInterpreterGetInputTensor(ctx->text2mel_interpreter, energy_index);
+    TfLiteTensor* speaker_tensor = TfLiteInterpreterGetInputTensor(ctx->text2mel_interpreter, speaker_index);
+    TfLiteTensor* f0_tensor      = TfLiteInterpreterGetInputTensor(ctx->text2mel_interpreter, f0_index);
+    TfLiteTensor* speed_tensor   = TfLiteInterpreterGetInputTensor(ctx->text2mel_interpreter, speed_index);
+    TfLiteTensor* text_tensor    = TfLiteInterpreterGetInputTensor(ctx->text2mel_interpreter, text_index);
 
     // 5) Copy input values
     TfLiteTensorCopyFromBuffer(energy_tensor,  &ctx->config.energy_ratio, sizeof(float));
@@ -171,13 +171,13 @@ int tts_generate_audio(TTSContext* ctx,
     TfLiteTensorCopyFromBuffer(text_tensor, simple_array, input_length * sizeof(int32_t));
 
 
-    // 3. Run Tacotron2 inference
-    if (TfLiteInterpreterInvoke(ctx->tacotron2_interpreter) != kTfLiteOk)
+    // 3. Run text2mel inference
+    if (TfLiteInterpreterInvoke(ctx->text2mel_interpreter) != kTfLiteOk)
         return -1;
     
     
     // 4. Get mel spectrogram output
-    const TfLiteTensor* mel_tensor = TfLiteInterpreterGetOutputTensor(ctx->tacotron2_interpreter, 1);
+    const TfLiteTensor* mel_tensor = TfLiteInterpreterGetOutputTensor(ctx->text2mel_interpreter, 1);
     float* mel_outputs = (float*)TfLiteTensorData(mel_tensor);
     int mel_size = TfLiteTensorByteSize(mel_tensor) / sizeof(float);
 
@@ -186,19 +186,19 @@ int tts_generate_audio(TTSContext* ctx,
     int mel_dims[3];
     for (int i = 0; i < 3; ++i)
         mel_dims[i] = TfLiteTensorDim(mel_tensor, i);
-    TfLiteInterpreterResizeInputTensor(ctx->melgan_interpreter, 0, mel_dims, 3);
-    TfLiteInterpreterAllocateTensors(ctx->melgan_interpreter);
+    TfLiteInterpreterResizeInputTensor(ctx->vocoder_interpreter, 0, mel_dims, 3);
+    TfLiteInterpreterAllocateTensors(ctx->vocoder_interpreter);
 
-    // 5. Run MB-MelGAN inference
-    TfLiteTensor* melgan_input = TfLiteInterpreterGetInputTensor(ctx->melgan_interpreter, 0);
-    TfLiteTensorCopyFromBuffer(melgan_input, TfLiteTensorData(mel_tensor),
+    // 5. Run vocoder inference
+    TfLiteTensor* vocoder_input = TfLiteInterpreterGetInputTensor(ctx->vocoder_interpreter, 0);
+    TfLiteTensorCopyFromBuffer(vocoder_input, TfLiteTensorData(mel_tensor),
                            TfLiteTensorByteSize(mel_tensor));
 
-    if (TfLiteInterpreterInvoke(ctx->melgan_interpreter) != kTfLiteOk)
+    if (TfLiteInterpreterInvoke(ctx->vocoder_interpreter) != kTfLiteOk)
         return -1;
 
     // 6. Get audio output
-    const TfLiteTensor* audio_tensor = TfLiteInterpreterGetOutputTensor(ctx->melgan_interpreter, 0);
+    const TfLiteTensor* audio_tensor = TfLiteInterpreterGetOutputTensor(ctx->vocoder_interpreter, 0);
 
     // Get dimensions
     int batch = TfLiteTensorDim(audio_tensor, 0);
@@ -235,11 +235,11 @@ int tts_generate_audio(TTSContext* ctx,
 void tts_cleanup(TTSContext* ctx) {
     if (!ctx) return;
     
-    if (ctx->tacotron2_interpreter)
-        TfLiteInterpreterDelete(ctx->tacotron2_interpreter);
+    if (ctx->text2mel_interpreter)
+        TfLiteInterpreterDelete(ctx->text2mel_interpreter);
     
-    if (ctx->melgan_interpreter)
-        TfLiteInterpreterDelete(ctx->melgan_interpreter);
+    if (ctx->vocoder_interpreter)
+        TfLiteInterpreterDelete(ctx->vocoder_interpreter);
     
     free(ctx);
 }
