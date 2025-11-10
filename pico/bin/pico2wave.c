@@ -173,8 +173,6 @@ int main(int argc, const char *argv[]) {
     size_t bufferSize = 256;
 
     char * dlbased = "false";
-    char* wavefile = NULL;
-    char* text = NULL;
     char* tacotron_path = NULL;
     char* melgan_path = NULL;
     char* processor_path = NULL;
