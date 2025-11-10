@@ -485,6 +485,32 @@ int main(int argc, const char *argv[]) {
             .speed_ratio = 1.0f
         };
         tts_configure(tts, &config);
+
+        // Generate audio
+        float* audio_buffer = NULL;
+        size_t audio_size = 0;
+        
+        if (tts_generate_audio(tts, text, &audio_buffer, &audio_size) != 0) {
+            fprintf(stderr, "Failed to synthesize speech\n");
+            tts_cleanup(tts);
+            return 1;
+        }
+
+
+        FILE* fp = fopen(wavefile, "wb");
+        if (!fp) {
+            fprintf(stderr, "Failed to open output file: %s\n", wavefile);
+            free(audio_buffer);
+            tts_cleanup(tts);
+            return 1;
+        }
+
+        write_float_wav(wavefile, audio_buffer, audio_size);
+
+
+        free(audio_buffer);
+        tts_cleanup(tts);
+    
     }
 }
 
