@@ -29,7 +29,9 @@
 #include <picoapi.h>
 #include <picoapid.h>
 #include <picoos.h>
+#ifdef ENABLE_TENSORFLOW
 #include <ttsdlbased.h>
+#endif
 
 /* adaptation layer defines */
 #define PICO_MEM_SIZE       2500000
@@ -194,7 +196,7 @@ int main(int argc, const char *argv[]) {
             "path to processor.json file", "PATH" },
         { "text", 's', POPT_ARG_STRING, &text, 0,
             "text to synthesize", "TEXT" },
-        {"dlbased", 'dl', POPT_ARG_STRING, &dlbased, 0,
+        {"dlbased", 'd', POPT_ARG_STRING, &dlbased, 0,
             "Use deep learning based tts", "dl" },
 		POPT_AUTOHELP
 		POPT_TABLEEND
@@ -468,46 +470,51 @@ int main(int argc, const char *argv[]) {
         }
         poptFreeContext(optCon);
 
-        // Initialize TTS model
-        TTSContext* tts = tts_initialize(tacotron_path, melgan_path, processor_path);
-        if (!tts) {
-            fprintf(stderr, "Failed to initialize TTS model\n");
-            return 1;
-        }
+        #ifdef ENABLE_TENSORFLOW
+            // Initialize TTS model
+            TTSContext* tts = tts_initialize(tacotron_path, melgan_path, processor_path);
+            if (!tts) {
+                fprintf(stderr, "Failed to initialize TTS model\n");
+                return 1;
+            }
 
-        // Configure TTS parameters
-        TTSConfig config = {
-            .energy_ratio = 1.0f,
-            .speaker_id = 0,
-            .f0_ratio = 1.0f,
-            .speed_ratio = 1.0f
-        };
-        tts_configure(tts, &config);
+            // Configure TTS parameters
+            TTSConfig config = {
+                .energy_ratio = 1.0f,
+                .speaker_id = 0,
+                .f0_ratio = 1.0f,
+                .speed_ratio = 1.0f
+            };
+            tts_configure(tts, &config);
 
-        // Generate audio
-        float* audio_buffer = NULL;
-        size_t audio_size = 0;
-        
-        if (tts_generate_audio(tts, text, &audio_buffer, &audio_size) != 0) {
-            fprintf(stderr, "Failed to synthesize speech\n");
-            tts_cleanup(tts);
-            return 1;
-        }
+            // Generate audio
+            float* audio_buffer = NULL;
+            size_t audio_size = 0;
+            
+            if (tts_generate_audio(tts, text, &audio_buffer, &audio_size) != 0) {
+                fprintf(stderr, "Failed to synthesize speech\n");
+                tts_cleanup(tts);
+                return 1;
+            }
 
 
-        FILE* fp = fopen(wavefile, "wb");
-        if (!fp) {
-            fprintf(stderr, "Failed to open output file: %s\n", wavefile);
+            FILE* fp = fopen(wavefile, "wb");
+            if (!fp) {
+                fprintf(stderr, "Failed to open output file: %s\n", wavefile);
+                free(audio_buffer);
+                tts_cleanup(tts);
+                return 1;
+            }
+
+            write_float_wav(wavefile, audio_buffer, audio_size);
+
+
             free(audio_buffer);
             tts_cleanup(tts);
-            return 1;
-        }
-
-        write_float_wav(wavefile, audio_buffer, audio_size);
-
-
-        free(audio_buffer);
-        tts_cleanup(tts);
+        #else
+                fprintf(stderr, "TensorFlow support not enabled. Use --enable-tensorflow when configuring.\n");
+                return 1;
+        #endif
     
     }
 }
