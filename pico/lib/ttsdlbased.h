@@ -32,7 +32,8 @@ void tts_configure(TTSContext* ctx, const TTSConfig* config);
 int tts_generate_audio(TTSContext* ctx,
                       const char* text,
                       float** audio_out,
-                      size_t* audio_length);
+                      size_t* audio_length,
+                      const char* lang);
 
 void tts_cleanup(TTSContext* ctx);
 

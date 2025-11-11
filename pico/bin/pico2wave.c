@@ -460,7 +460,12 @@ int main(int argc, const char *argv[]) {
         }
         exit(ret);
     }else{
-
+        if(!(strcmp(lang, "en-US") == 0 || strcmp(lang, "en-GB") == 0 || strcmp(lang, "ger") == 0 )){
+            fprintf(stderr, "Language wasn't supported yet, please use an other method for this language.\n");
+            poptPrintHelp(optCon, stderr, 0);
+            poptFreeContext(optCon);
+            return 1;
+        }
         // Validate required arguments
         if (!tacotron_path || !melgan_path || !processor_path || !text || !wavefile) {
             fprintf(stderr, "Missing required arguments.\n");
@@ -486,13 +491,27 @@ int main(int argc, const char *argv[]) {
                 .f0_ratio = 1.0f,
                 .speed_ratio = 1.0f
             };
+            // Initialize with default config
+            if (strcmp(lang, "en-US") == 0 || strcmp(lang, "en-GB") == 0 ){
+                TTSConfig config = {
+                    .energy_ratio = 1.0f,
+                    .speaker_id = 0,
+                    .f0_ratio = 1.0f,
+                    .speed_ratio = 1.0f
+                };
+            }else if(strcmp(lang, "ger") == 0){
+                TTSConfig config = {
+                    .speaker_id = 0,
+                };
+            }
+            
             tts_configure(tts, &config);
 
             // Generate audio
             float* audio_buffer = NULL;
             size_t audio_size = 0;
             
-            if (tts_generate_audio(tts, text, &audio_buffer, &audio_size) != 0) {
+            if (tts_generate_audio(tts, text, &audio_buffer, &audio_size, lang) != 0) {
                 fprintf(stderr, "Failed to synthesize speech\n");
                 tts_cleanup(tts);
                 return 1;
