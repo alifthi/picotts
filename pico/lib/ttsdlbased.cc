@@ -14,8 +14,9 @@ extern "C" {
 
 // Implementation based on liteinference.py workflow
 TTSContext* tts_initialize(const char* text2mel_model_path, 
-                         const char* vocoder_model_path,
-                         const char* processor_path) {
+                        const char* vocoder_model_path,
+                        const char* processor_path, 
+                        const char* lang) {
     TTSContext* ctx = nullptr;
     TfLiteInterpreterOptions* options = nullptr;
     TfLiteDelegate* flex_delegate = nullptr;
@@ -34,11 +35,15 @@ TTSContext* tts_initialize(const char* text2mel_model_path,
     }
 
     // Initialize with default config
-    ctx->config.energy_ratio = 1.0f;
-    ctx->config.speaker_id = 0;
-    ctx->config.f0_ratio = 1.0f;
-    ctx->config.speed_ratio = 1.0f;
-    
+    if (strcmp(lang, "en-US") == 0 || strcmp(lang, "en-GB") == 0 ){
+        ctx->config.energy_ratio = 1.0f;
+        ctx->config.speaker_id = 0;
+        ctx->config.f0_ratio = 1.0f;
+        ctx->config.speed_ratio = 1.0f;
+    }else if(strcmp(lang, "ger") == 0){
+        ctx->config.speaker_id = 0;
+    }
+
     // Create interpreter options
     options = TfLiteInterpreterOptionsCreate();
     if (!options) {

@@ -23,8 +23,9 @@ typedef struct {
 } TTSContext;
 
 TTSContext* tts_initialize(const char* text2mel_model_path,
-                         const char* vocoder_model_path,
-                         const char* processor_path);
+                        const char* vocoder_model_path,
+                        const char* processor_path,
+                        const char* lang);
 
 void tts_configure(TTSContext* ctx, const TTSConfig* config);
 
