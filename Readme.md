@@ -43,6 +43,10 @@ Output file must be .wav
 
 ## TensorFlow TTS Support
 
+**Dependencies**: Before building with TensorFlow support, install:
+- `libtensorflowlite-c`
+- `libtensorflowlite-flex`
+
 Build with TensorFlow support:
 ```
 cd pico
