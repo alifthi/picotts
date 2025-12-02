@@ -108,6 +108,81 @@ void tts_configure(TTSContext* ctx, const TTSConfig* config) {
     if (!ctx || !config) return;
     memcpy(&ctx->config, config, sizeof(TTSConfig));
 }
+
+int feed_german_model(TTSContext* ctx, int input_length){
+    int text_index    = 0;
+    int length_index  = 1;
+    int speaker_index = 2;   
+
+    int dims[2] = {1, (int)input_length};
+    TfLiteStatus status = TfLiteInterpreterResizeInputTensor(ctx->text2mel_interpreter, text_index, dims, 2);
+    if (status != kTfLiteOk) {
+        fprintf(stderr, "ResizeInputTensor failed for text input\n");
+        cleanup_text_processor();
+        return -1;
+    }
+
+    status = TfLiteInterpreterAllocateTensors(ctx->text2mel_interpreter);
+    if (status != kTfLiteOk) {
+        fprintf(stderr, "AllocateTensors failed\n");
+        cleanup_text_processor();
+        return -1;
+    }
+
+    TfLiteTensor* length_tensor = TfLiteInterpreterGetInputTensor(ctx->text2mel_interpreter, length_index);
+    TfLiteTensorCopyFromBuffer(length_tensor, &input_length, sizeof(int32_t));
+
+    TfLiteTensor* speaker_tensor = TfLiteInterpreterGetInputTensor(ctx->text2mel_interpreter, speaker_index);
+    TfLiteTensorCopyFromBuffer(speaker_tensor, &ctx->config.speaker_id, sizeof(int32_t));
+
+    return 0;
+}
+
+int feed_english_model(TTSContext* ctx, int input_length){
+    int energy_index  = 0;
+    int speaker_index = 1;
+    int f0_index      = 2;
+    int speed_index   = 3;
+    int text_index    = 4;
+
+    int dims[2] = {1, (int)input_length};
+    TfLiteStatus status = TfLiteInterpreterResizeInputTensor(ctx->text2mel_interpreter, text_index, dims, 2);
+    if (status != kTfLiteOk) {
+        fprintf(stderr, "ResizeInputTensor failed for text input\n");
+        cleanup_text_processor();
+        return -1;
+    }
+
+    status = TfLiteInterpreterAllocateTensors(ctx->text2mel_interpreter);
+    if (status != kTfLiteOk) {
+        fprintf(stderr, "AllocateTensors failed\n");
+        cleanup_text_processor();
+        return -1;
+    }
+    TfLiteTensor* energy_tensor  = TfLiteInterpreterGetInputTensor(ctx->text2mel_interpreter, energy_index);
+    TfLiteTensor* f0_tensor      = TfLiteInterpreterGetInputTensor(ctx->text2mel_interpreter, f0_index);
+    TfLiteTensor* speed_tensor   = TfLiteInterpreterGetInputTensor(ctx->text2mel_interpreter, speed_index);
+
+    TfLiteTensorCopyFromBuffer(energy_tensor, &ctx->config.energy_ratio, sizeof(float));
+    TfLiteTensorCopyFromBuffer(f0_tensor, &ctx->config.f0_ratio, sizeof(float));
+    TfLiteTensorCopyFromBuffer(speed_tensor, &ctx->config.speed_ratio, sizeof(float));
+
+    TfLiteTensor* speaker_tensor = TfLiteInterpreterGetInputTensor(ctx->text2mel_interpreter, speaker_index);
+    TfLiteTensorCopyFromBuffer(speaker_tensor, &ctx->config.speaker_id, sizeof(int32_t));
+
+    return 0;
+}
+
+int feed_dutch_model(TTSContext* ctx, int input_length){
+
+    int length_index = 0;
+
+    TfLiteTensor* length_tensor = TfLiteInterpreterGetInputTensor(ctx->text2mel_interpreter, length_index);
+    TfLiteTensorCopyFromBuffer(length_tensor, &input_length, sizeof(int32_t));
+
+    return 0;
+}
+
 int tts_generate_audio(TTSContext* ctx,
                     const char* text,
                     float** audio_out,
@@ -137,61 +212,25 @@ int tts_generate_audio(TTSContext* ctx,
     }
     free(input_ids);
 
-    // Declare all indices outside the conditional block
-    int energy_index = -1, f0_index = -1, speed_index = -1;
-    int text_index = -1, speaker_index = -1, length_index = -1;
-
+    int text_index;
     // 2. Assign indices based on language
     if (strcmp(lang, "en-US") == 0 || strcmp(lang, "en-GB") == 0) {
-        energy_index  = 0;
-        speaker_index = 1;
-        f0_index      = 2;
-        speed_index   = 3;
-        text_index    = 4;
+        text_index = 4;
+        feed_english_model(ctx, input_length);
     } else if (strcmp(lang, "ger") == 0) {
-        text_index    = 0;
-        length_index  = 1;
-        speaker_index = 2;
-    } else {
+        text_index = 0;
+        feed_german_model(ctx, input_length);
+    }else if(strcmp(lang, "dutch") == 0) {
+        text_index = 1;
+        feed_dutch_model(ctx, input_length);
+    }else {
         fprintf(stderr, "Unsupported language: %s\n", lang);
         cleanup_text_processor();
         return -1;
     }
 
-    // 3. Resize and allocate text2mel input
-    int dims[2] = {1, (int)input_length};
-    TfLiteStatus status = TfLiteInterpreterResizeInputTensor(ctx->text2mel_interpreter, text_index, dims, 2);
-    if (status != kTfLiteOk) {
-        fprintf(stderr, "ResizeInputTensor failed for text input\n");
-        cleanup_text_processor();
-        return -1;
-    }
-
-    status = TfLiteInterpreterAllocateTensors(ctx->text2mel_interpreter);
-    if (status != kTfLiteOk) {
-        fprintf(stderr, "AllocateTensors failed\n");
-        cleanup_text_processor();
-        return -1;
-    }
-
-    // 4. Fill tensors
-    if (strcmp(lang, "en-US") == 0 || strcmp(lang, "en-GB") == 0) {
-        TfLiteTensor* energy_tensor  = TfLiteInterpreterGetInputTensor(ctx->text2mel_interpreter, energy_index);
-        TfLiteTensor* f0_tensor      = TfLiteInterpreterGetInputTensor(ctx->text2mel_interpreter, f0_index);
-        TfLiteTensor* speed_tensor   = TfLiteInterpreterGetInputTensor(ctx->text2mel_interpreter, speed_index);
-
-        TfLiteTensorCopyFromBuffer(energy_tensor, &ctx->config.energy_ratio, sizeof(float));
-        TfLiteTensorCopyFromBuffer(f0_tensor, &ctx->config.f0_ratio, sizeof(float));
-        TfLiteTensorCopyFromBuffer(speed_tensor, &ctx->config.speed_ratio, sizeof(float));
-    } else if (strcmp(lang, "ger") == 0) {
-        TfLiteTensor* length_tensor = TfLiteInterpreterGetInputTensor(ctx->text2mel_interpreter, length_index);
-        TfLiteTensorCopyFromBuffer(length_tensor, &input_length, sizeof(int32_t));
-    }
-
-    TfLiteTensor* speaker_tensor = TfLiteInterpreterGetInputTensor(ctx->text2mel_interpreter, speaker_index);
-    TfLiteTensor* text_tensor    = TfLiteInterpreterGetInputTensor(ctx->text2mel_interpreter, text_index);
-
-    TfLiteTensorCopyFromBuffer(speaker_tensor, &ctx->config.speaker_id, sizeof(int32_t));
+    
+    TfLiteTensor* text_tensor = TfLiteInterpreterGetInputTensor(ctx->text2mel_interpreter, text_index);
     TfLiteTensorCopyFromBuffer(text_tensor, simple_array, input_length * sizeof(int32_t));
 
     // 5. Run text2mel
