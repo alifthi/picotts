@@ -61,4 +61,6 @@ static char *replace_all(const char *s, const char *old, const char *newstr);
 
 static char *apply_normalize(const char *ipa);
 
+int ipa_to_ids(char * ipas);
+
 #endif 
