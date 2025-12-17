@@ -157,5 +157,7 @@ int ipa_to_ids(char * ipas, IntVec ids){
     }
     iv_push(&ids, 3);
     
+    free(norm);
+    free(symbols);
     return 0;
 }
