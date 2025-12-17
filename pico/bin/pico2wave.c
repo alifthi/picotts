@@ -32,7 +32,9 @@
 #ifdef ENABLE_TENSORFLOW
 #include <ttsdlbased.h>
 #endif
-
+#ifdef ENABLE_ONNX
+#include <dutchtts.h>
+#endif
 /* adaptation layer defines */
 #define PICO_MEM_SIZE       2500000
 #define DummyLen 100000000
