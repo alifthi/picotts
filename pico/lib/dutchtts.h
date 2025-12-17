@@ -28,7 +28,7 @@ int run_mel2text_session(DutchTTSContext * ctx,
      IntVec ids,
      OrtValue* mel_tensor);
 
-int renove_zeros(DutchTTSContext * ctx,
+int remove_zeros(DutchTTSContext * ctx,
                 OrtValue* mel_tensor,
                 float* mel_data);
 
