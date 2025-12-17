@@ -14,6 +14,7 @@ typedef struct {
     OrtSession* vocoder_session;
     char* processor_path;
     const OrtApi* ort;
+    OrtEnv* env;
     OrtSessionOptions* sess_opts;
     OrtMemoryInfo* meminfo;
 } DutchTTSContext;
