@@ -2,14 +2,18 @@
 #define TEXT_PROCESSOR_H
 
 #include <stddef.h>
-#include "text_symbols.h"
-
 
 typedef struct {
     int *data;
     size_t len;
     size_t cap;
 } IntVec;
+
+typedef struct {
+    const char *sym;
+    int id;
+    size_t len;
+} SymbolEntry;
 
 static void iv_init(IntVec *v);
 
