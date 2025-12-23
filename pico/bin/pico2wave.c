@@ -34,6 +34,8 @@
 #endif
 #ifdef ENABLE_ONNX
 #include <dutchtts.h>
+#include <dutch_ipa.h>
+#include <dutch_text_processor.h>
 #endif
 /* adaptation layer defines */
 #define PICO_MEM_SIZE       2500000
@@ -462,7 +464,7 @@ int main(int argc, const char *argv[]) {
         }
         exit(ret);
     }else{
-        if(!(strcmp(lang, "en-US") == 0 || strcmp(lang, "en-GB") == 0 || strcmp(lang, "ger") == 0 )){
+        if(!(strcmp(lang, "en-US") == 0 || strcmp(lang, "en-GB") == 0 || strcmp(lang, "ger") == 0 ||strcmp(lang, "du") == 0 )){
             fprintf(stderr, "Language wasn't supported yet, please use an other method for this language.\n");
             poptPrintHelp(optCon, stderr, 0);
             poptFreeContext(optCon);
@@ -533,6 +535,52 @@ int main(int argc, const char *argv[]) {
 
             free(audio_buffer);
             tts_cleanup(tts);
+        #elifdef ENABLE_ONNX
+            if (!text) {
+               fprintf(stderr, "Text is NULL\n");
+               return 1;
+            }
+            
+            int ret = init_dutch_ipa();
+            if (ret != 0) {
+               fprintf(stderr, "Failed to initialize Dutch IPA\n");
+               return 1;
+            }
+            
+            char *ipas = text_to_phonemes(text);
+            if (!ipas) {
+               fprintf(stderr, "Failed to convert text to phonemes\n");
+               return 1;
+            }
+            
+            IntVec ids;
+            ret = ipa_to_ids(ipas, &ids);
+            if (ret != 0) {
+               fprintf(stderr, "Failed to convert IPA to IDs\n");
+               return 1;
+            }
+            
+            
+            DutchTTSContext ctx;
+            ret = init_session(&ctx, tacotron_path, melgan_path);
+            if (ret != 0) {
+               fprintf(stderr, "Failed to initialize session\n");
+               return 1;
+            }
+            OrtValue* mel_tensor;
+            ret = run_mel2text_session(&ctx, ids, &mel_tensor);
+
+            OrtValue* mel_trim_tensor;
+            ret = remove_zeros(&ctx,
+                                &mel_tensor,
+                                &mel_trim_tensor);
+                                
+            float* audio_data;
+            size_t audio_len = 0;
+            ret = run_vocoder_session(&ctx, mel_trim_tensor, &audio_data, &audio_len);
+            
+            
+            write_float_wav(wavefile, audio_data, audio_len);
         #else
                 fprintf(stderr, "TensorFlow support not enabled. Use --enable-tensorflow when configuring.\n");
                 return 1;

@@ -14,10 +14,24 @@ AC_ARG_ENABLE([tensorflow],
     [tensorflow=$enableval],
     [tensorflow=no])
 
+AC_ARG_ENABLE([onnx],
+    AS_HELP_STRING([--enable-onnx], [Enable ONNX Runtime support]),
+    [onnx=$enableval],
+    [onnx=no])
+
 AM_CONDITIONAL([ENABLE_TENSORFLOW], [test "x$tensorflow" = "xyes"])
+AM_CONDITIONAL([ENABLE_ONNX], [test "x$onnx" = "xyes"])
 
 if test "x$tensorflow" = "xyes"; then
     AC_DEFINE([ENABLE_TENSORFLOW], [1], [Define if TensorFlow support is enabled])
+fi
+
+if test "x$onnx" = "xyes"; then
+    AC_DEFINE([ENABLE_ONNX], [1], [Define if ONNX Runtime support is enabled])
+    AC_CHECK_HEADERS([onnxruntime_c_api.h], [],
+        [AC_MSG_ERROR([ONNX Runtime header not found. Install libonnxruntime-dev])])
+    LIBS="-lonnxruntime $LIBS"
+    AC_MSG_NOTICE([ONNX Runtime support enabled])
 fi
 LT_INIT
 AC_PROG_LIBTOOL

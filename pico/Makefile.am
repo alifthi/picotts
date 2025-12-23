@@ -41,6 +41,20 @@ libttspico_la_SOURCES += \
 	lib/text_symbols.cc
 endif
 
+# ONNX support to be added - currently using Dutch TTS for ONNX models
+# if ENABLE_ONNX
+# libttspico_la_SOURCES += \
+# 	lib/ttsdlbased_onnx.cc \
+# 	lib/text_processor.cc \
+# 	lib/text_symbols.cc
+# endif
+
+# Dutch TTS sources (used by pico2wave)
+libttspico_la_SOURCES += \
+	lib/dutch_ipa.c \
+	lib/dutch_text_processor.c \
+	lib/dutchtts.c
+
 libttspico_ladir = $(includedir)
 libttspico_la_HEADERS = \
     lib/picoacph.h \
@@ -77,7 +91,10 @@ libttspico_la_HEADERS = \
     lib/picotrns.h \
     lib/picowa.h
 
-libttspico_la_LIBADD = -lm
+libttspico_la_CFLAGS = -I lib
+libttspico_la_CXXFLAGS = -I lib
+
+libttspico_la_LIBADD = -lm -lespeak-ng
 
 picolangdir = $(datadir)/pico/lang
 picolang_DATA = \
@@ -105,6 +122,11 @@ pico2wave_CFLAGS = -Wall -Dpicolangdir=\"$(picolangdir)\" -I lib
 
 if ENABLE_TENSORFLOW
     pico2wave_LDADD += -ltensorflowlite_c -ltensorflowlite_flex
+    pico2wave_LDFLAGS = -Wl,--no-as-needed
+endif
+
+if ENABLE_ONNX
+    pico2wave_LDADD += -lonnxruntime
     pico2wave_LDFLAGS = -Wl,--no-as-needed
 endif
 
