@@ -111,7 +111,7 @@ static char *apply_normalize(const char *ipa) {
 }
 
 // Convert ipas to ids
-int ipa_to_ids(char * ipas, IntVec ids){
+int ipa_to_ids(char * ipas, IntVec * ids){
     size_t sym_count = sizeof(SYMBOLS_INIT) / sizeof(SYMBOLS_INIT[0]);
     SymbolEntry *symbols = malloc(sym_count * sizeof(SymbolEntry));
     if (!symbols) { perror("malloc"); return 1; }

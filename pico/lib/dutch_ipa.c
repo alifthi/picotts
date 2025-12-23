@@ -1,5 +1,9 @@
 #include <dutch_ipa.h>
 
+// Global variable definitions
+int TEXT_MODE = 0;                  
+int PHONEM_MODE = espeakPHONEMES_IPA;
+
 // espeak initialization.
 int init_dutch_ipa(){
 
@@ -17,7 +21,7 @@ int init_dutch_ipa(){
 }
 
 // Convert input text to phonems
-int text_to_phonemes(const char *text, const void **textptr, char * ipas){
+int text_to_phonemes(const char *text, char * ipas){
     const void *textptr = (const void *)text;
     ipas = espeak_TextToPhonemes(&textptr, TEXT_MODE, espeakPHONEMES_IPA);
     if (!ipas) {

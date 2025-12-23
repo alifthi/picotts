@@ -21,8 +21,7 @@ typedef struct {
 
 int init_session(DutchTTSContext * ctx,
      const char * text2mel_path,
-     const char * vocoder_path,
-     const char * config_path);
+     const char * vocoder_path);
 
 int run_mel2text_session(DutchTTSContext * ctx,
      IntVec ids,
@@ -34,7 +33,8 @@ int remove_zeros(DutchTTSContext * ctx,
 
 int run_vocoder_session(DutchTTSContext * ctx,
      OrtValue* mel_trim_tensor,
-     float* audio_data);
+     float* audio_data,
+     size_t audio_len);
     
 
 #endif

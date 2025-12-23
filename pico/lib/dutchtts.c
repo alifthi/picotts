@@ -2,7 +2,7 @@
 
 // Session initialization
 int init_session(DutchTTSContext * ctx, const char * text2mel_path,
-                const char * vocoder_path, const char * config_path){
+                const char * vocoder_path){
     
     ctx->ort = OrtGetApiBase()->GetApi(ORT_API_VERSION);
 
@@ -10,9 +10,9 @@ int init_session(DutchTTSContext * ctx, const char * text2mel_path,
     ctx->sess_opts = NULL;
     ctx->meminfo = NULL;
 
-    ctx->ort->CreateEnv(ORT_LOGGING_LEVEL_WARNING, "tts", &env);
-    ctx->ort->CreateSessionOptions(&sess_opts);
-    ctx->ort->CreateCpuMemoryInfo(OrtArenaAllocator, OrtMemTypeDefault, &meminfo);
+    ctx->ort->CreateEnv(ORT_LOGGING_LEVEL_WARNING, "tts", &ctx->env);
+    ctx->ort->CreateSessionOptions(&ctx->sess_opts);
+    ctx->ort->CreateCpuMemoryInfo(OrtArenaAllocator, OrtMemTypeDefault, &ctx->meminfo);
     
     ctx->text2mel_session = NULL;
     ctx->vocoder_session = NULL;
@@ -55,10 +55,10 @@ int run_mel2text_session(DutchTTSContext * ctx, IntVec ids,
     OrtValue* ids_tensor = NULL;
     OrtValue* len_tensor = NULL;
 
-    ctx->ort->CreateTensorWithDataAsOrtValue(meminfo, input_ids, sizeof(input_ids),
+    ctx->ort->CreateTensorWithDataAsOrtValue(ctx->meminfo, input_ids, sizeof(input_ids),
                                          input_ids_shape, 2, ONNX_TENSOR_ELEMENT_DATA_TYPE_INT64, &ids_tensor);
     
-    ctx->ort->CreateTensorWithDataAsOrtValue(meminfo, input_len, sizeof(input_len),
+    ctx->ort->CreateTensorWithDataAsOrtValue(ctx->meminfo, input_len, sizeof(input_len),
                                          input_len_shape, 1, ONNX_TENSOR_ELEMENT_DATA_TYPE_INT64, &len_tensor);
 
     const char* glow_in_names[] = {"input1", "input2"};
@@ -66,7 +66,7 @@ int run_mel2text_session(DutchTTSContext * ctx, IntVec ids,
     const char* glow_out_names[] = {"output"};
     mel_tensor = NULL;
 
-    ctx->ort->Run(glow_sess, NULL, glow_in_names, glow_in_vals, 2, glow_out_names, 1, &mel_tensor);
+    ctx->ort->Run(ctx->text2mel_session, NULL, glow_in_names, glow_in_vals, 2, glow_out_names, 1, &mel_tensor);
     if (!mel_tensor) { 
         fprintf(stderr, "GlowTTS Run failed or returned NULL mel\n"); 
         ctx->ort->ReleaseSession(ctx->text2mel_session);
@@ -143,7 +143,7 @@ int remove_zeros(DutchTTSContext * ctx, OrtValue* mel_tensor,
                 idx = (size_t)f * (size_t)channels + (size_t)c;
             }
             float v = mel_data[idx];
-            if (v > EPS || v < -EPS) { any = 1; break; }
+            if (v > MEL_EPS || v < -MEL_EPS) { any = 1; break; }
         }
         if (any) { last_nonzero = f; break; }
     }
@@ -181,14 +181,7 @@ int remove_zeros(DutchTTSContext * ctx, OrtValue* mel_tensor,
         fprintf(stderr, "CreateTensorAsOrtValue failed\n");
         ctx->ort->ReleaseTensorTypeAndShapeInfo(mel_info);
         ctx->ort->ReleaseValue(mel_tensor);
-        ctx->ort->ReleaseValue(ids_tensor);
-        ctx->ort->ReleaseValue(len_tensor);
-        ctx->ort->ReleaseSession(ctx->glow_sess);
-        ctx->ort->ReleaseSession(ctx->text2mel_session);
-        ctx->ort->ReleaseMemoryInfo(ctx->meminfo);
-        ctx->ort->ReleaseSessionOptions(ctx->sess_opts);
-        ctx->ort->ReleaseEnv(ctx->env);
-        ctx->ort->ReleaseAllocator(allocator)
+        ctx->ort->ReleaseAllocator(allocator);
         free(mel_data);
         return 1;
     }
@@ -203,7 +196,7 @@ int remove_zeros(DutchTTSContext * ctx, OrtValue* mel_tensor,
             mel_trim_data[dst] = mel_data[src];
         }
     }
-    ctx->ort->ReleaseAllocator(allocator)
+    ctx->ort->ReleaseAllocator(allocator);
     free(mel_data);
     free(mel_trim_data);
     return 0;
@@ -212,26 +205,16 @@ int remove_zeros(DutchTTSContext * ctx, OrtValue* mel_tensor,
 
 int run_vocoder_session(DutchTTSContext * ctx,
                         OrtValue* mel_trim_tensor,
-                        float* audio_data){
+                        float* audio_data,
+                        size_t audio_len){
     const char* voc_in_names[] = {"input1"};
     const OrtValue* voc_in_vals[] = {mel_trim_tensor};
     const char* voc_out_names[] = {"output"};
     OrtValue* audio_tensor = NULL;
 
-    ctx->ort->Run(vocoder_sess, NULL, voc_in_names, voc_in_vals, 1, voc_out_names, 1, &audio_tensor);
+    ctx->ort->Run(ctx->vocoder_session, NULL, voc_in_names, voc_in_vals, 1, voc_out_names, 1, &audio_tensor);
     if (!audio_tensor) {
         fprintf(stderr, "Vocoder run failed or returned NULL audio tensor\n");
-
-        ctx->ort->ReleaseValue(mel_trim_tensor);
-        ctx->ort->ReleaseValue(mel_tensor);
-        ctx->ort->ReleaseValue(ids_tensor);
-        ctx->ort->ReleaseValue(len_tensor);
-        ctx->ort->ReleaseSession(ctx->vocoder_sess);
-        ctx->ort->ReleaseSession(ctx->glow_sess);
-        ctx->ort->ReleaseMemoryInfo(ctx->meminfo);
-        ctx->ort->ReleaseSessionOptions(ctx->sess_opts);
-        ctx->ort->ReleaseEnv(ctx->env);
-
         return 1;
     }
 
@@ -240,21 +223,11 @@ int run_vocoder_session(DutchTTSContext * ctx,
     OrtTensorTypeAndShapeInfo* audio_info = NULL;
     ctx->ort->GetTensorTypeAndShape(audio_tensor, &audio_info);
 
-    size_t audio_len = 0;
     ctx->ort->GetTensorShapeElementCount(audio_info, &audio_len);
 
 
     ctx->ort->ReleaseTensorTypeAndShapeInfo(audio_info);
     ctx->ort->ReleaseValue(audio_tensor);
     ctx->ort->ReleaseValue(mel_trim_tensor);
-    ctx->ort->ReleaseValue(mel_tensor);
-    ctx->ort->ReleaseValue(ids_tensor);
-    ctx->ort->ReleaseValue(len_tensor);
-    ctx->ort->ReleaseSession(ctx->vocoder_sess);
-    ctx->ort->ReleaseSession(ctx->glow_sess);
-    ctx->ort->ReleaseMemoryInfo(ctx->meminfo);
-    ctx->ort->ReleaseSessionOptions(ctx->sess_opts);
-    ctx->ort->ReleaseEnv(ctx->env);
-
     return 0;
 }

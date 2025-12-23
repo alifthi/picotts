@@ -4,11 +4,11 @@
 #include <stdlib.h>
 #include <espeak-ng/speak_lib.h>
 
-int TEXT_MODE = 0;                  
-int PHONEM_MODE = espeakPHONEMES_IPA;  
+extern int TEXT_MODE;                  
+extern int PHONEM_MODE;  
 
 int init_dutch_ipa();
 
-int text_to_phonemes(const char *text, const void **textptr, char * ipas);
+int text_to_phonemes(const char *text, char * ipas);
 
 #endif
