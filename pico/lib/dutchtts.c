@@ -183,10 +183,11 @@ int remove_zeros(DutchTTSContext * ctx, OrtValue* mel_tensor,
         ctx->ort->ReleaseValue(mel_tensor);
         ctx->ort->ReleaseValue(ids_tensor);
         ctx->ort->ReleaseValue(len_tensor);
-        ctx->ort->ReleaseSession(glow_sess);
-        ctx->ort->ReleaseMemoryInfo(meminfo);
-        ctx->ort->ReleaseSessionOptions(sess_opts);
-        ctx->ort->ReleaseEnv(env);
+        ctx->ort->ReleaseSession(ctx->glow_sess);
+        ctx->ort->ReleaseSession(ctx->text2mel_session);
+        ctx->ort->ReleaseMemoryInfo(ctx->meminfo);
+        ctx->ort->ReleaseSessionOptions(ctx->sess_opts);
+        ctx->ort->ReleaseEnv(ctx->env);
         ctx->ort->ReleaseAllocator(allocator)
         free(mel_data);
         return 1;
@@ -209,7 +210,51 @@ int remove_zeros(DutchTTSContext * ctx, OrtValue* mel_tensor,
 
 }
 
-int run_vocoder_session(DutchTTSContext * ctx, float* mel_data,
+int run_vocoder_session(DutchTTSContext * ctx,
+                        OrtValue* mel_trim_tensor,
                         float* audio_data){
+    const char* voc_in_names[] = {"input1"};
+    const OrtValue* voc_in_vals[] = {mel_trim_tensor};
+    const char* voc_out_names[] = {"output"};
+    OrtValue* audio_tensor = NULL;
 
+    ctx->ort->Run(vocoder_sess, NULL, voc_in_names, voc_in_vals, 1, voc_out_names, 1, &audio_tensor);
+    if (!audio_tensor) {
+        fprintf(stderr, "Vocoder run failed or returned NULL audio tensor\n");
+
+        ctx->ort->ReleaseValue(mel_trim_tensor);
+        ctx->ort->ReleaseValue(mel_tensor);
+        ctx->ort->ReleaseValue(ids_tensor);
+        ctx->ort->ReleaseValue(len_tensor);
+        ctx->ort->ReleaseSession(ctx->vocoder_sess);
+        ctx->ort->ReleaseSession(ctx->glow_sess);
+        ctx->ort->ReleaseMemoryInfo(ctx->meminfo);
+        ctx->ort->ReleaseSessionOptions(ctx->sess_opts);
+        ctx->ort->ReleaseEnv(ctx->env);
+
+        return 1;
+    }
+
+    ctx->ort->GetTensorMutableData(audio_tensor, (void**)&audio_data);
+
+    OrtTensorTypeAndShapeInfo* audio_info = NULL;
+    ctx->ort->GetTensorTypeAndShape(audio_tensor, &audio_info);
+
+    size_t audio_len = 0;
+    ctx->ort->GetTensorShapeElementCount(audio_info, &audio_len);
+
+
+    ctx->ort->ReleaseTensorTypeAndShapeInfo(audio_info);
+    ctx->ort->ReleaseValue(audio_tensor);
+    ctx->ort->ReleaseValue(mel_trim_tensor);
+    ctx->ort->ReleaseValue(mel_tensor);
+    ctx->ort->ReleaseValue(ids_tensor);
+    ctx->ort->ReleaseValue(len_tensor);
+    ctx->ort->ReleaseSession(ctx->vocoder_sess);
+    ctx->ort->ReleaseSession(ctx->glow_sess);
+    ctx->ort->ReleaseMemoryInfo(ctx->meminfo);
+    ctx->ort->ReleaseSessionOptions(ctx->sess_opts);
+    ctx->ort->ReleaseEnv(ctx->env);
+
+    return 0;
 }
