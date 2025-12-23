@@ -92,7 +92,120 @@ int run_mel2text_session(DutchTTSContext * ctx, IntVec ids,
 }
 
 int remove_zeros(DutchTTSContext * ctx, OrtValue* mel_tensor,
-                float* mel_data){
+                OrtValue* mel_trim_tensor){
+    
+    float* mel_data = NULL;
+    ctx->ort->GetTensorMutableData(mel_tensor, (void**)&mel_data);
+
+    OrtTensorTypeAndShapeInfo* mel_info = NULL;
+    ctx->ort->GetTensorTypeAndShape(mel_tensor, &mel_info);
+
+    int64_t dims[3] = {0,0,0};
+    ctx->ort->GetDimensions(mel_info, dims, 3);
+    printf("Glow mel shape: [%lld, %lld, %lld]\n", (long long)dims[0], (long long)dims[1], (long long)dims[2]);
+
+    int layout = -1; 
+    int channels = 0;
+    int frames = 0;
+
+    if (dims[0] != 1) {
+        fprintf(stderr, "Warning: expected batch dim 1, got %lld\n", (long long)dims[0]);
+    }
+
+    if (dims[1] == 80) {
+        layout = 0;
+        channels = (int)dims[1];
+        frames = (int)dims[2];
+    } else if (dims[2] == 80) {
+        layout = 1;
+        channels = (int)dims[2];
+        frames = (int)dims[1];
+    } else {
+        if (dims[1] == 80 || dims[2] == 80) {
+            layout = (dims[1] == 80) ? 0 : 1;
+            channels = 80;
+            frames = (layout==0) ? (int)dims[2] : (int)dims[1];
+        } else {
+            fprintf(stderr, "Unexpected mel channels dimension (neither dims[1] nor dims[2] == 80). Using dims[1] as channels.\n");
+            layout = 0;
+            channels = (int)dims[1];
+            frames = (int)dims[2];
+        }
+    }
+    int last_nonzero = -1;
+    for (int f = frames - 1; f >= 0; --f) {
+        int any = 0;
+        for (int c = 0; c < channels; ++c) {
+            size_t idx = 0;
+            if (layout == 0) {
+                idx = (size_t)c * (size_t)frames + (size_t)f;
+            } else {
+                idx = (size_t)f * (size_t)channels + (size_t)c;
+            }
+            float v = mel_data[idx];
+            if (v > EPS || v < -EPS) { any = 1; break; }
+        }
+        if (any) { last_nonzero = f; break; }
+    }
+
+    if (last_nonzero < 0) {
+        fprintf(stderr, "All mel frames are (near) zero. Exiting.\n");
+        ctx->ort->ReleaseTensorTypeAndShapeInfo(mel_info);
+        ctx->ort->ReleaseValue(mel_tensor);
+        ctx->ort->ReleaseSession(ctx->text2mel_session);
+        ctx->ort->ReleaseSession(ctx->vocoder_session);
+        ctx->ort->ReleaseMemoryInfo(ctx->meminfo);
+        ctx->ort->ReleaseSessionOptions(ctx->sess_opts);
+        ctx->ort->ReleaseEnv(ctx->env);
+        return 1;
+    }
+     int new_frames = last_nonzero + 1;
+    
+    printf("Trimming frames: old=%d new=%d (last nonzero frame=%d)\n", frames, new_frames, last_nonzero);
+
+    int64_t new_dims[3];
+    if (layout == 0) {
+        new_dims[0] = 1;
+        new_dims[1] = channels;
+        new_dims[2] = new_frames;
+    } else {
+        new_dims[0] = 1;
+        new_dims[1] = new_frames;
+        new_dims[2] = channels;
+    }
+
+    OrtAllocator* allocator = NULL;
+    ctx->ort->GetAllocatorWithDefaultOptions(&allocator);
+    ctx->ort->CreateTensorAsOrtValue(allocator, new_dims, 3, ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT, &mel_trim_tensor);
+    if (!mel_trim_tensor) {
+        fprintf(stderr, "CreateTensorAsOrtValue failed\n");
+        ctx->ort->ReleaseTensorTypeAndShapeInfo(mel_info);
+        ctx->ort->ReleaseValue(mel_tensor);
+        ctx->ort->ReleaseValue(ids_tensor);
+        ctx->ort->ReleaseValue(len_tensor);
+        ctx->ort->ReleaseSession(glow_sess);
+        ctx->ort->ReleaseMemoryInfo(meminfo);
+        ctx->ort->ReleaseSessionOptions(sess_opts);
+        ctx->ort->ReleaseEnv(env);
+        ctx->ort->ReleaseAllocator(allocator)
+        free(mel_data);
+        return 1;
+    }
+
+    float* mel_trim_data = NULL;
+    ctx->ort->GetTensorMutableData(mel_trim_tensor, (void**)&mel_trim_data);
+
+    for (int f = 0; f < new_frames; ++f) {
+        for (int c = 0; c < channels; ++c) {
+            size_t src = (layout == 0) ? (size_t)c * frames + f : (size_t)f * channels + c;
+            size_t dst = (layout == 0) ? (size_t)c * new_frames + f : (size_t)f * channels + c;
+            mel_trim_data[dst] = mel_data[src];
+        }
+    }
+    ctx->ort->ReleaseAllocator(allocator)
+    free(mel_data);
+    free(mel_trim_data);
+    return 0;
 
 }
 

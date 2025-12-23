@@ -30,7 +30,7 @@ int run_mel2text_session(DutchTTSContext * ctx,
 
 int remove_zeros(DutchTTSContext * ctx,
                 OrtValue* mel_tensor,
-                float* mel_data);
+                OrtValue* mel_data);
 
 int run_vocoder_session(DutchTTSContext * ctx,
      float* mel_data,
