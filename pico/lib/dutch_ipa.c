@@ -21,12 +21,9 @@ int init_dutch_ipa(){
 }
 
 // Convert input text to phonems
-int text_to_phonemes(const char *text, char * ipas){
+char* text_to_phonemes(const char *text){
     const void *textptr = (const void *)text;
-    ipas = espeak_TextToPhonemes(&textptr, TEXT_MODE, espeakPHONEMES_IPA);
-    if (!ipas) {
-        fprintf(stderr, "Failed to convert text to phonemes\n");
-        return 1;
-    }
-    return 0;
+    char * ipas = espeak_TextToPhonemes(&textptr, TEXT_MODE, espeakPHONEMES_IPA);
+    
+    return ipas;
 }

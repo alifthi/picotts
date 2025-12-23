@@ -25,7 +25,7 @@ int init_session(DutchTTSContext * ctx,
 
 int run_mel2text_session(DutchTTSContext * ctx,
      IntVec ids,
-     OrtValue* mel_tensor);
+     OrtValue** mel_tensor);
 
 int remove_zeros(DutchTTSContext * ctx,
                 OrtValue* mel_tensor,

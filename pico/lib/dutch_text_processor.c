@@ -1,7 +1,7 @@
 #include <dutch_text_processor.h>
 #include <stdlib.h>
 #include <string.h>
-
+#include <stdio.h>
 
 // Int vector initialization.
 static void iv_init(IntVec *v) {
@@ -16,6 +16,8 @@ static void iv_push(IntVec *v, int x) {
         if (!v->data) { perror("realloc"); exit(1); }
     }
     v->data[v->len++] = x;
+
+    
 }
 
 // Free the IntVec pointer
@@ -121,26 +123,27 @@ int ipa_to_ids(char * ipas, IntVec * ids){
     }
 
     qsort(symbols, sym_count, sizeof(SymbolEntry), cmp_symbol_len_desc);
-
+    
     char *no_stress = remove_stress_marks(ipas);
-
+    
     char *norm = apply_normalize(no_stress);
     free(no_stress);
-
-    iv_init(&ids);
     
-    iv_push(&ids, 3);
+    iv_init(ids);
+    
+    iv_push(ids, 3);
     const char *p = norm;
     size_t pos = 0;
     size_t n = strlen(norm);
-
+    
     while (pos < n) {
         int matched = 0;
         for (size_t si = 0; si < sym_count; ++si) {
             size_t L = symbols[si].len;
             if (L == 0) continue;
             if (pos + L <= n && memcmp(norm + pos, symbols[si].sym, L) == 0) {
-                iv_push(&ids, symbols[si].id);
+                iv_push(ids, symbols[si].id);
+                
                 pos += L;
                 matched = 1;
                 break;
@@ -148,14 +151,14 @@ int ipa_to_ids(char * ipas, IntVec * ids){
         }
         if (!matched) {
             size_t end = pos + 4; if (end > n) end = n;
-            fprintf("Unknown IPA sequence at byte position %zu: '", pos);
+            fprintf(stderr, "Unknown IPA sequence at byte position %zu: '", pos);
             free(norm);
             free(symbols);
-            iv_free(&ids);
+            iv_free(ids);
             return 1;
         }
     }
-    iv_push(&ids, 3);
+    iv_push(ids, 3);
     
     free(norm);
     free(symbols);

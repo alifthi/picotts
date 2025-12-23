@@ -9,6 +9,6 @@ extern int PHONEM_MODE;
 
 int init_dutch_ipa();
 
-int text_to_phonemes(const char *text, char * ipas);
+char* text_to_phonemes(const char *text);
 
 #endif

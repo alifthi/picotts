@@ -40,7 +40,7 @@ int init_session(DutchTTSContext * ctx, const char * text2mel_path,
 
 // Inference from mel2text model.
 int run_mel2text_session(DutchTTSContext * ctx, IntVec ids,
-                        OrtValue* mel_tensor){
+                        OrtValue** mel_tensor){
     
     int64_t input_ids[ids.len];       
     int64_t input_ids_shape[] = {1, ids.len};
@@ -49,8 +49,8 @@ int run_mel2text_session(DutchTTSContext * ctx, IntVec ids,
 
     for (size_t i = 0; i < ids.len; ++i) {
         input_ids[i] = (int64_t)ids.data[i];
-    }
 
+    }
 
     OrtValue* ids_tensor = NULL;
     OrtValue* len_tensor = NULL;
@@ -64,29 +64,26 @@ int run_mel2text_session(DutchTTSContext * ctx, IntVec ids,
     const char* glow_in_names[] = {"input1", "input2"};
     const OrtValue* glow_in_vals[] = {ids_tensor, len_tensor};
     const char* glow_out_names[] = {"output"};
-    mel_tensor = NULL;
+    *mel_tensor = NULL;
 
-    ctx->ort->Run(ctx->text2mel_session, NULL, glow_in_names, glow_in_vals, 2, glow_out_names, 1, &mel_tensor);
-    if (!mel_tensor) { 
+    ctx->ort->Run(ctx->text2mel_session, NULL, glow_in_names, glow_in_vals, 2, glow_out_names, 1, mel_tensor);
+    if (!*mel_tensor) { 
         fprintf(stderr, "GlowTTS Run failed or returned NULL mel\n"); 
-        ctx->ort->ReleaseSession(ctx->text2mel_session);
-        ctx->ort->ReleaseSession(ctx->vocoder_session);
-        ctx->ort->ReleaseMemoryInfo(ctx->meminfo);
-        ctx->ort->ReleaseSessionOptions(ctx->sess_opts);
-        ctx->ort->ReleaseEnv(ctx->env);
-        ctx->ort->ReleaseValue(ids_tensor);
-        ctx->ort->ReleaseValue(len_tensor);
-        ctx->ort->ReleaseValue(glow_in_vals);
-        free(glow_in_names);
-        free(glow_out_names);
+        // ctx->ort->ReleaseSession(ctx->text2mel_session);
+        // ctx->ort->ReleaseSession(ctx->vocoder_session);
+        // ctx->ort->ReleaseMemoryInfo(ctx->meminfo);
+        // ctx->ort->ReleaseSessionOptions(ctx->sess_opts);
+        // ctx->ort->ReleaseEnv(ctx->env);
+        // ctx->ort->ReleaseValue(ids_tensor);
+        // ctx->ort->ReleaseValue(len_tensor);
+        // ctx->ort->ReleaseValue(glow_in_vals);
+        // free(glow_in_names);
+        // free(glow_out_names);
 
         return 1; 
     }
     ctx->ort->ReleaseValue(ids_tensor);
     ctx->ort->ReleaseValue(len_tensor);
-    ctx->ort->ReleaseValue(glow_in_vals);
-    free(glow_in_names);
-    free(glow_out_names);
     return 0;
 
 }
