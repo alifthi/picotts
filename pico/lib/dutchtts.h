@@ -28,13 +28,13 @@ int run_mel2text_session(DutchTTSContext * ctx,
      OrtValue** mel_tensor);
 
 int remove_zeros(DutchTTSContext * ctx,
-                OrtValue* mel_tensor,
-                OrtValue* mel_trim_tensor);
+                OrtValue** mel_tensor,
+                OrtValue** mel_trim_tensor);
 
 int run_vocoder_session(DutchTTSContext * ctx,
      OrtValue* mel_trim_tensor,
-     float* audio_data,
-     size_t audio_len);
+     float** audio_data,
+     size_t* audio_len);
     
 
 #endif

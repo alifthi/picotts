@@ -69,17 +69,6 @@ int run_mel2text_session(DutchTTSContext * ctx, IntVec ids,
     ctx->ort->Run(ctx->text2mel_session, NULL, glow_in_names, glow_in_vals, 2, glow_out_names, 1, mel_tensor);
     if (!*mel_tensor) { 
         fprintf(stderr, "GlowTTS Run failed or returned NULL mel\n"); 
-        // ctx->ort->ReleaseSession(ctx->text2mel_session);
-        // ctx->ort->ReleaseSession(ctx->vocoder_session);
-        // ctx->ort->ReleaseMemoryInfo(ctx->meminfo);
-        // ctx->ort->ReleaseSessionOptions(ctx->sess_opts);
-        // ctx->ort->ReleaseEnv(ctx->env);
-        // ctx->ort->ReleaseValue(ids_tensor);
-        // ctx->ort->ReleaseValue(len_tensor);
-        // ctx->ort->ReleaseValue(glow_in_vals);
-        // free(glow_in_names);
-        // free(glow_out_names);
-
         return 1; 
     }
     ctx->ort->ReleaseValue(ids_tensor);
@@ -88,20 +77,25 @@ int run_mel2text_session(DutchTTSContext * ctx, IntVec ids,
 
 }
 
-int remove_zeros(DutchTTSContext * ctx, OrtValue* mel_tensor,
-                OrtValue* mel_trim_tensor){
-    
-    float* mel_data = NULL;
-    ctx->ort->GetTensorMutableData(mel_tensor, (void**)&mel_data);
+int remove_zeros(DutchTTSContext * ctx, OrtValue** mel_tensor,
+                OrtValue** mel_trim_tensor){
+    if (!mel_tensor || !*mel_tensor) {
+        fprintf(stderr, "remove_zeros: mel_tensor is NULL\n");
+        return 1;
+    }
 
     OrtTensorTypeAndShapeInfo* mel_info = NULL;
-    ctx->ort->GetTensorTypeAndShape(mel_tensor, &mel_info);
+    ctx->ort->GetTensorTypeAndShape(*mel_tensor, &mel_info);
+    if (!mel_info) {
+        fprintf(stderr, "GetTensorTypeAndShape failed\n");
+        return 1;
+    }
 
     int64_t dims[3] = {0,0,0};
     ctx->ort->GetDimensions(mel_info, dims, 3);
     printf("Glow mel shape: [%lld, %lld, %lld]\n", (long long)dims[0], (long long)dims[1], (long long)dims[2]);
 
-    int layout = -1; 
+    int layout = -1;
     int channels = 0;
     int frames = 0;
 
@@ -129,6 +123,15 @@ int remove_zeros(DutchTTSContext * ctx, OrtValue* mel_tensor,
             frames = (int)dims[2];
         }
     }
+
+    float* mel_data = NULL;
+    ctx->ort->GetTensorMutableData(*mel_tensor, (void**)&mel_data);
+    if (!mel_data) {
+        fprintf(stderr, "GetTensorMutableData returned NULL\n");
+        ctx->ort->ReleaseTensorTypeAndShapeInfo(mel_info);
+        return 1;
+    }
+
     int last_nonzero = -1;
     for (int f = frames - 1; f >= 0; --f) {
         int any = 0;
@@ -148,16 +151,10 @@ int remove_zeros(DutchTTSContext * ctx, OrtValue* mel_tensor,
     if (last_nonzero < 0) {
         fprintf(stderr, "All mel frames are (near) zero. Exiting.\n");
         ctx->ort->ReleaseTensorTypeAndShapeInfo(mel_info);
-        ctx->ort->ReleaseValue(mel_tensor);
-        ctx->ort->ReleaseSession(ctx->text2mel_session);
-        ctx->ort->ReleaseSession(ctx->vocoder_session);
-        ctx->ort->ReleaseMemoryInfo(ctx->meminfo);
-        ctx->ort->ReleaseSessionOptions(ctx->sess_opts);
-        ctx->ort->ReleaseEnv(ctx->env);
         return 1;
     }
-     int new_frames = last_nonzero + 1;
-    
+
+    int new_frames = last_nonzero + 1;
     printf("Trimming frames: old=%d new=%d (last nonzero frame=%d)\n", frames, new_frames, last_nonzero);
 
     int64_t new_dims[3];
@@ -173,18 +170,15 @@ int remove_zeros(DutchTTSContext * ctx, OrtValue* mel_tensor,
 
     OrtAllocator* allocator = NULL;
     ctx->ort->GetAllocatorWithDefaultOptions(&allocator);
-    ctx->ort->CreateTensorAsOrtValue(allocator, new_dims, 3, ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT, &mel_trim_tensor);
-    if (!mel_trim_tensor) {
+    ctx->ort->CreateTensorAsOrtValue(allocator, new_dims, 3, ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT, mel_trim_tensor);
+    if (!*mel_trim_tensor) {
         fprintf(stderr, "CreateTensorAsOrtValue failed\n");
         ctx->ort->ReleaseTensorTypeAndShapeInfo(mel_info);
-        ctx->ort->ReleaseValue(mel_tensor);
-        ctx->ort->ReleaseAllocator(allocator);
-        free(mel_data);
         return 1;
     }
 
     float* mel_trim_data = NULL;
-    ctx->ort->GetTensorMutableData(mel_trim_tensor, (void**)&mel_trim_data);
+    ctx->ort->GetTensorMutableData(*mel_trim_tensor, (void**)&mel_trim_data);
 
     for (int f = 0; f < new_frames; ++f) {
         for (int c = 0; c < channels; ++c) {
@@ -193,17 +187,17 @@ int remove_zeros(DutchTTSContext * ctx, OrtValue* mel_tensor,
             mel_trim_data[dst] = mel_data[src];
         }
     }
-    ctx->ort->ReleaseAllocator(allocator);
-    free(mel_data);
-    free(mel_trim_data);
+
+    ctx->ort->ReleaseTensorTypeAndShapeInfo(mel_info);
     return 0;
 
 }
 
 int run_vocoder_session(DutchTTSContext * ctx,
                         OrtValue* mel_trim_tensor,
-                        float* audio_data,
-                        size_t audio_len){
+                        float** audio_data,
+                        size_t* audio_len){
+                            
     const char* voc_in_names[] = {"input1"};
     const OrtValue* voc_in_vals[] = {mel_trim_tensor};
     const char* voc_out_names[] = {"output"};
@@ -215,12 +209,12 @@ int run_vocoder_session(DutchTTSContext * ctx,
         return 1;
     }
 
-    ctx->ort->GetTensorMutableData(audio_tensor, (void**)&audio_data);
+    ctx->ort->GetTensorMutableData(audio_tensor, (void**)audio_data);
 
     OrtTensorTypeAndShapeInfo* audio_info = NULL;
     ctx->ort->GetTensorTypeAndShape(audio_tensor, &audio_info);
 
-    ctx->ort->GetTensorShapeElementCount(audio_info, &audio_len);
+    ctx->ort->GetTensorShapeElementCount(audio_info, audio_len);
 
 
     ctx->ort->ReleaseTensorTypeAndShapeInfo(audio_info);
